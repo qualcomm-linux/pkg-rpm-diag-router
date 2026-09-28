@@ -1,213 +1,105 @@
-# pkg-rpm-template
+# Diag-router RPM Packing
 
-Template repository for creating RPM package repositories for Qualcomm® Linux.
+RPM packaging for Qualcomm's diagnostic router daemon on CentOS 10 Stream.
+The `diag-router` daemon routes Qualcomm diagnostic messages between the host
+and modem.
 
-Clone this template to create a `pkg-rpm-<component>` repo for **one** RPM
-package. Your spec file and a small `sources` pointer go on a per-stream branch
-(`c10s`); the shipped GitHub Actions workflows build the RPM on every PR and
-publish it to Artifactory on demand. All build/release logic lives in the shared
-[`qualcomm-linux/qcom-rpm-utils`](https://github.com/qualcomm-linux/qcom-rpm-utils)
-repo — the workflows here are thin callers.
+This repository follows the Fedora/CentOS dist-git model: documentation and
+workflow entry points live on `main`, while the package definition lives on the
+`c10s` branch.
 
-> [!IMPORTANT]
-> **Get all the branches — the packaging files are not on `main`.**
->
-> This repo uses one branch per distro stream: `main` holds the docs, and
-> **`c10s`** holds the spec file and `sources` you actually edit.
->
-> - **Creating from the template:** tick **"Include all branches"** in the *Use
->   this template* dialog. **It is off by default**, and with it off your new repo
->   gets only `main` — no `c10s`, and nothing to build.
-> - **Cloning an existing repo:** a plain `git clone` fetches every branch, but
->   leaves you on the default one. Run `git checkout c10s` to reach the packaging
->   files.
->
-> Already created a repo without the checkbox? Recover `c10s` with the snippet in
-> [step 1](#1-create-your-repo-from-this-template).
+## Package
 
----
+The current package is `diag-router` 1.0.3:
 
-## What you get
-
-| Workflow | Trigger | Purpose |
-|---|---|---|
-| [`build-on-pr.yml`](.github/workflows/build-on-pr.yml) | Pull request | Build the RPM(s) so reviewers confirm the package still builds. Read-only — never publishes. |
-| [`pkg-release.yml`](.github/workflows/pkg-release.yml) | Manual (`workflow_dispatch`) | Build **and** publish the RPM(s) to Artifactory, behind an approval gate. |
-
-Both delegate to reusable workflows in `qcom-rpm-utils`, which run `rpmbuild`
-inside the prebuilt `rpm-builder` container image for the runner's host
-architecture.
-
----
-
-## Branch model
-
-This template follows the Fedora/CentOS **dist-git** convention: **one branch per
-distro stream**, with the packaging files at that branch's root.
-
-| Branch | Role | Contents |
-|---|---|---|
-| `main` | Template + docs home. **Nothing is built here.** | This README, [docs/](docs/), community files, workflows. |
-| `c10s` | **CentOS 10 Stream package branch — where you work.** | Your `<component>.spec` + `sources` at the root, plus the workflows. |
-
-Future streams get their own branch (`c11s`, …) off the same model, so one repo
-can carry a package for several distro versions without branching history.
-
----
-
-## Onboarding: step by step
-
-### 1. Create your repo from this template
-Use **"Use this template" → Create a new repository**, naming it
-`pkg-rpm-<component>` (e.g. `pkg-rpm-audio`).
-
-> **Tick "Include all branches"** (see the note at the top — it is off by
-> default). If you already created the repo without it, recover `c10s` from the
-> template:
-> ```bash
-> git remote add template https://github.com/qualcomm-linux/pkg-rpm-template.git
-> git fetch template c10s
-> git push -u origin refs/remotes/template/c10s:refs/heads/c10s
-> git remote remove template
-> ```
-
-Clone it and switch to the package branch:
-
-```bash
-git clone https://github.com/qualcomm-linux/pkg-rpm-<component>.git
-cd pkg-rpm-<component>
-git checkout c10s
-```
-
-### 2. Configure GitHub settings (one-time)
-
-| Setting | Kind | Where | Value / purpose |
-|---|---|---|---|
-| `pkg-release-approval` | **Environment** | Environments | Approval gate for publishing — add required reviewers. |
-
-The build and publish jobs run on the shared AWS ephemeral ARM64 runner pool
-(`runs-on: [self-hosted, platform-prd-u2404-arm64-large-od-ephem]`), which has
-Docker available. That label is set inside the reusable workflows, so your repo
-must have access to that runner pool, or the jobs will queue forever waiting for
-a runner.
-
-The build pulls the prebuilt `rpm-builder` image from GHCR
-(`ghcr.io/qualcomm-linux/rpm-builder:centos10`). Both caller workflows therefore
-grant `packages: read`; keep that permission if you edit them.
-
-### 3. Add your package files on the `c10s` branch
-
-The starter files are already at the root of `c10s`, carrying a `.example`
-suffix. Rename them:
-
-```bash
-git checkout c10s
-git mv mypackage.spec.example <component>.spec
-git mv sources.example sources
-```
-
-The suffix exists so the build's single-`*.spec` glob ignores the skeleton until
-you rename it — otherwise your first PR would fail with `Multiple spec files`.
-After the rename the branch root holds:
-
-```
-<component>.spec     # exactly one RPM spec file
-sources              # checksum + filename of each source tarball
-```
-
-- **`<component>.spec`** — your RPM spec. Its `Source0:`/`SourceN:` must be a
-  real, fetchable URL whose **filename matches the `sources` entry** (use
-  `%{name}`/`%{version}` macros, and the `#/` rename trick when the URL basename
-  differs). Example:
-  ```
-  Source0: https://github.com/<org>/<proj>/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
-  ```
-- **`sources`** — one line per tarball, in `sha512sum --tag` (dist-git) format.
-  **The tarball is never committed to git.** Generate the line with:
-  ```bash
-  sha512sum --tag <component>-1.0.tar.gz > sources
-  ```
-  which yields:
-  ```
-  SHA512 (mycomponent-1.0.tar.gz) = 3a7bd3e2360a3d29eea436fcfb7e44c735d117c...
-  ```
-
-### 4. Open a PR
-Commit the spec + `sources` and open a PR **against `c10s`**. `build-on-pr`
-fetches the tarball (from the cache, or from the spec's `Source` URL on a cache
-miss), verifies its checksum, and builds the RPM(s). Download the built RPMs from
-the run's **Artifacts**; the package list is in the run **Summary**.
-
-### 5. Release (publish to Artifactory)
-After merge, go to **Actions → Release → Run workflow** and select the `c10s`
-branch:
-- A reviewer approves the `pkg-release-approval` gate.
-- Once approved, the RPM(s) are published to Artifactory.
-
----
-
-## Updating the package version
-
-This is the everyday workflow — **two edits on `c10s`, no tarball in git**:
-
-1. Bump `Version:` in the spec (and the `Source0:` URL if its path changed).
-2. Recompute the checksum for the new tarball:
-   ```bash
-   sha512sum --tag <component>-<newversion>.tar.gz > sources
-   ```
-3. Commit the spec + `sources`, open a PR (build verifies it), merge, then run
-   **Release**. The first release fetches the new upstream tarball, verifies it,
-   and caches it back to Artifactory automatically.
-
----
-
-## How sources are resolved (cache → upstream → cache-back)
-
-The dist-git **lookaside cache** model: git stores only the checksum; the tarball
-lives in Artifactory, content-addressed by that checksum.
-
-1. The build computes the cache path from `SRC_TARBALL_CACHE_BASE_URL` + the `sources` entry
-   and checks whether the tarball is already cached.
-2. **Cache hit** → download from the cache. **Cache miss** → download from the
-   spec's `Source` URL.
-3. The checksum is verified against `sources` (mismatch fails the build).
-4. On **release**, a tarball fetched from upstream is cached back so future
-   builds are hits.
-
-Published layout in Artifactory (defaults):
-```
-qualcomm-dnf-repo/10-stream/BaseOS/Packages/<pkg>-<ver>.<arch>.rpm
-qualcomm-dnf-repo/sources/<filename>/<hashtype>/<hash>/<filename>
-```
-
-All RPMs (binary and source) are dumped **flat** into
-`10-stream/BaseOS/Packages/` — there are no `src/` or `output/` subfolders.
-Artifactory's YUM indexer writes the `repodata/` (with YUM Metadata Folder Depth
-`2`, at `qualcomm-dnf-repo/10-stream/BaseOS/repodata/`).
-
----
-
-## Required configuration summary
-
-| Name | Kind | Required | Purpose |
-|---|---|---|---|
-| `pkg-release-approval` | Environment | Release only | Approval gate before publishing. |
-| Runner pool access | — | Yes | Build/publish run on `[self-hosted, platform-prd-u2404-arm64-large-od-ephem]`. |
-
----
-
-## Troubleshooting
-
-| Symptom | Cause / fix |
+| Property | Value |
 |---|---|
-| `cache-base-url is empty` | Define the `SRC_TARBALL_CACHE_BASE_URL` Actions **variable**. |
-| `denied` / `unauthorized` pulling `rpm-builder` from GHCR | The caller workflow is missing `packages: read`. |
-| Build job never starts (stuck *Queued*) | No runner from the `platform-prd-u2404-arm64-large-od-ephem` pool is available to the repo. |
-| `No 'sources' file found` | Add a `sources` file at the root of the `c10s` branch (rename `sources.example`). |
-| `Malformed line in 'sources'` | Each line must be `HASHTYPE (filename) = hexdigest`. Use `sha512sum --tag`. |
-| `not in the cache and no matching SourceN: URL` | The tarball isn't cached and no spec `Source` URL matches its filename. Fix the `Source0:` filename or pre-seed the cache. |
-| `Checksum mismatch` | The cached/upstream tarball doesn't match `sources`. Fix the checksum or the upstream URL. |
-| `No '*.spec' file` / `Multiple spec files` | Keep exactly one spec on `c10s`. If you added your own alongside `mypackage.spec.example`, the suffix should have hidden it — check you didn't drop the `.example`. |
-| No `c10s` branch in your new repo | You created it without ticking **Include all branches**. See the recovery snippet in step 1. |
+| Target stream | CentOS 10 Stream (`c10s`) |
+| Architecture | `aarch64` only |
+| Package type | Prebuilt binary RPM; no local compilation |
+| Runtime dependency | `libdiag` |
+| Service integration | `diag-router.service` and `diag-router.conf` |
+| License | Qualcomm.nologin.binaries.license|
 
-See [`docs/workflows.md`](docs/workflows.md) for the full guide.
+The upstream archive is already arranged as an RPM payload. The package
+installs the daemon, its systemd service and sysusers configuration,
+documentation, and license. The archive also contains prebuilt debug/build-id
+files; these are intentionally discarded because this package does not
+regenerate or publish debuginfo.
+
+## Repository layout
+
+| Path | Purpose |
+|---|---|
+| [`c10s/diag-router.spec`](https://github.com/qualcomm-linux/pkg-rpm-diag-router/blob/c10s/diag-router.spec) | RPM metadata, source URL, install rules, and file list |
+| [`c10s/sources`](https://github.com/qualcomm-linux/pkg-rpm-diag-router/blob/c10s/sources) | SHA512 checksum and filename for the source archive |
+| [`build-on-pr.yml`](.github/workflows/build-on-pr.yml) | Pull-request build validation |
+| [`pkg-release.yml`](.github/workflows/pkg-release.yml) | Manual RPM release workflow |
+| [`docs/workflows.md`](docs/workflows.md) | Detailed reusable-workflow and lookaside-cache documentation |
+
+### Branches
+
+- **`main`** — project documentation, workflow callers, and community files.
+- **`c10s`** — the CentOS 10 Stream package branch. Package changes should be
+  made here; it contains `diag-router.spec` and `sources` at the branch root.
+
+## Source archive
+
+The package consumes the prebuilt archive published in Qualcomm Artifactory:
+
+```text
+https://qartifactory-edge.qualcomm.com/artifactory/qsc_releases/software/chip/component/core-technologies.qclinux.0.0/260925.1/prebuilt_rpm/diag-router/diag-router-1.0.3_1.el10.aarch64.tar.gz
+```
+
+The tarball is not committed to Git. Its filename and SHA512 digest are tracked
+in [`c10s/sources`](https://github.com/qualcomm-linux/pkg-rpm-diag-router/blob/c10s/sources).
+The PR and release workflows resolve the archive from the lookaside cache when
+available; on a cache miss they fetch the URL from `Source0` in the spec and
+verify it against `sources`. Release builds can cache a verified upstream
+archive for subsequent builds.
+
+## Build and release
+
+### Pull-request build
+
+Open a pull request against `c10s` for package changes. The
+[`Build on PR`](.github/workflows/build-on-pr.yml) workflow:
+
+1. resolves the archive from the lookaside cache or `Source0`;
+2. verifies its SHA512 checksum;
+3. builds the RPM with the shared `qcom-rpm-utils` workflow; and
+4. uploads the resulting RPM as a workflow artifact.
+
+The workflow is read-only with respect to publishing. It requires the
+`SRC_TARBALL_CACHE_BASE_URL` Actions variable and access to the shared ARM64
+runner/build infrastructure.
+
+### Release
+
+After the `c10s` change is merged, run
+[`Release`](.github/workflows/pkg-release.yml) manually from the Actions tab.
+The release workflow builds the package, caches a verified source archive on a
+cache miss, and publishes the RPM to the configured Artifactory repository
+after the `pkg-release-approval` environment gate is approved.
+
+See [`docs/workflows.md`](docs/workflows.md) for the full cache layout,
+required GitHub configuration, credentials, and troubleshooting guidance.
+
+## Updating the package
+
+Make package updates on `c10s`:
+
+1. Update `Version:` and, when necessary, the `Source0` URL in
+   [`diag-router.spec`](https://github.com/qualcomm-linux/pkg-rpm-diag-router/blob/c10s/diag-router.spec).
+2. Fetch the matching upstream archive, for example
+   `diag-router-<version>_1.el10.aarch64.tar.gz`.
+3. Regenerate the checksum pointer:
+   ```bash
+   sha512sum --tag diag-router-<version>_1.el10.aarch64.tar.gz > sources
+   ```
+4. Commit the spec and `sources`, then open a pull request against `c10s`.
+5. After the PR build passes and the change is merged, run the manual Release
+   workflow.
+
+Keep the filename in `sources` identical to the filename resolved from the
+spec's `Source0`. Do not commit source archives to the repository.

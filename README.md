@@ -35,31 +35,11 @@ the daemon that routes Qualcomm diagnostic messages between the host and
 modem. It depends on `libdiag`, packaged in
 [`qualcomm-linux/pkg-rpm-libdiag`](https://github.com/qualcomm-linux/pkg-rpm-libdiag).
 
-> **Known gap:** the upstream tarball at `Source0` lives behind
-> `qartifactory-edge.qualcomm.com`, which returned 401/403 on anonymous access
-> while authoring this spec — the same access gap tracked for `qmi-framework`
-> in [`pkg-rpm-time-services`](https://github.com/qualcomm-linux/pkg-rpm-time-services)'s
-> README. The `sources` file holds a placeholder checksum until the tarball
-> is fetchable and the real one can be computed.
-
 ---
 
 ## Getting started
 
 ### Update the version
-
-Two edits, every time:
-
-1. Bump `Version:` in [`diag-router.spec`](diag-router.spec) (and the
-   `Source0:` URL if the upstream Artifactory path changed).
-2. Recompute the checksum:
-   ```bash
-   sha512sum --tag qcom-diag-router_<newversion>_arm64.tar.gz > sources
-   ```
-
-Commit both, open a PR against this branch, merge, then run **Release**. The
-first release fetches the new upstream tarball, verifies it, and caches it back
-automatically.
 
 ### Open a PR
 

@@ -19,7 +19,6 @@ ExclusiveArch:  aarch64
 
 BuildRequires:  systemd-rpm-macros
 
-Requires:       libdiag
 Requires(pre):    systemd
 Requires(post):   systemd
 Requires(preun):  systemd

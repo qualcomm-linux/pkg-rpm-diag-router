@@ -5,7 +5,7 @@ Version:        1.0.3
 Release:        1%{?dist}
 Summary:        Qualcomm diagnostic router daemon
 
-License:        BSD-3-Clause
+License:        Qualcomm.nologin.binaries.license
 URL:            https://github.com/qualcomm-linux/pkg-diag-router
 
 Source0:        https://qartifactory-edge.qualcomm.com/artifactory/qsc_releases/software/chip/component/core-technologies.qclinux.0.0/260925.1/prebuilt_rpm/diag-router/%{name}-%{version}_1.el10.aarch64.tar.gz
